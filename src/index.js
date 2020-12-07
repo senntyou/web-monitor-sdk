@@ -1,4 +1,4 @@
-/* eslint-disable import/prefer-default-export */
+/* eslint-disable import/prefer-default-export,prefer-template */
 import request from 'reqwest';
 import { now, refreshNow } from '@senntyou/utils';
 
@@ -20,8 +20,9 @@ const logs = [];
 
 let interval;
 let errorOccurred = !1;
+let initialized = !1;
 
-const report = () => {
+function report() {
   if (reportedCount >= realOptions.maxReports) {
     if (interval) {
       clearInterval(interval);
@@ -55,32 +56,49 @@ const report = () => {
       console.log('@senntyou/web-monitor-sdk: 上报 JS 报错信息失败');
     },
   });
-};
+}
 
-export const init = (options = {}) => {
+function onError(message, source, line, column, error) {
+  refreshNow();
+
+  logs.push({
+    href: window.location.href,
+    userAgent: window.navigator.userAgent,
+    cookie: window.document.cookie,
+    message: message || '',
+    source: source || '',
+    line: line || '',
+    column: column || '',
+    error: error instanceof Error ? error + '' : JSON.stringify(error),
+    stack: error ? error.stack || '' : '',
+    time: now.dateTime,
+  });
+
+  if (!errorOccurred) {
+    errorOccurred = !0;
+    // 每隔10秒检查一次
+    interval = setInterval(report, realOptions.checkInterval);
+    report();
+  }
+}
+
+export function init(options = {}) {
+  if (initialized) return;
+
+  initialized = true;
   realOptions = { ...defaultOptions, ...options };
 
-  window.onerror = (message, source, line, column, error) => {
-    refreshNow();
+  window.onerror = onError;
+}
 
-    logs.push({
-      href: window.location.href,
-      userAgent: window.navigator.userAgent,
-      cookie: window.document.cookie,
-      message,
-      source,
-      line,
-      column,
-      error: error ? error.message : '',
-      stack: error ? error.stack : '',
-      time: now.dateTime,
-    });
+export function reportError(error) {
+  if (!initialized || !error) return;
 
-    if (!errorOccurred) {
-      errorOccurred = !0;
-      // 每隔10秒检查一次
-      interval = setInterval(report, realOptions.checkInterval);
-      report();
-    }
-  };
-};
+  onError(
+    error.message || '',
+    error.fileName || '',
+    error.lineNumber || '',
+    error.columnNumber || '',
+    error,
+  );
+}
